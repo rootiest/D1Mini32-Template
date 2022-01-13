@@ -1,0 +1,226 @@
+##################################################################
+### Change the Substitution Keys below to customize this board ###
+##################################################################
+
+substitutions:
+    device_name: template-board                               # Device name with hyphens substituted for spaces.
+    device_entity: template_board                             # Device name with underscores substituted for spaces.
+    device_description: Template for D1Mini-32 sensor boards  # Device description, shown on ESPHome Dashboard
+    friendly_name: Template Board                             # Device name, human-readable with spaces allowed.
+    ipaddress: 192.168.86.180                                 # Static IP address for this device. Comment out the manual_ip section to use DHCP
+
+
+###############################################################################
+###  Note: Entries beginning with !secret reference keys from secrets.yaml  ###
+###        Place the following in /config/esphome/secrets.yaml to use       ###
+###            the /config/secrets.yaml file in your ESPHome code:          ###
+###                  <<: !include ../secrets.yaml                           ###
+###############################################################################
+
+# ESPHome Core config https://esphome.io/components/esphome.html
+esphome:
+  name: ${device_name}
+  comment: ${device_description}
+  platform: ESP32
+  board: wemos_d1_mini32
+
+# Enable Home Assistant API https://esphome.io/components/api.html
+api:
+  encryption:
+    key: !secret template_crypt_key
+
+# Enable logging https://esphome.io/components/logger.html
+logger:
+  level: 'INFO'
+
+# Enable OTA updates https://esphome.io/components/ota.html
+ota:
+  password: !secret ota_password
+
+# Enable web server https://esphome.io/components/web_server.html
+web_server:
+  port: 80
+  auth:
+    username: !secret web_serv_user
+    password: !secret web_serv_pass
+
+# Enable WiFi Preconfiguration https://esphome.io/components/wifi.html
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_pass
+  # Comment out below to use DHCP instead of manual IP Address
+  use_address: ${ipaddress}
+  manual_ip:
+    static_ip: ${ipaddress}
+    gateway: !secret gateway_ip
+    subnet: !secret local_subnet
+    dns1: !secret haos_ip
+    dns2: !secret gateway_ip
+
+  # Captive Portal Config
+  ap:
+    ssid: ${friendly_name}_AP
+    password: !secret fallbackpass
+
+# Fallback Hotspot https://esphome.io/components/captive_portal.html
+captive_portal:
+
+# Use Local Time Server https://esphome.io/components/time.html
+# Honestly you don't need both of these, just pick one.
+time:
+  - platform: sntp
+    servers: !secret local_time_server
+    id: sntp_time
+  - platform: homeassistant
+    id: ha_time
+
+# Align Sun Position To Lat/Long https://esphome.io/components/sun.html
+sun:
+  latitude: !secret home_lat
+  longitude: !secret home_lon
+
+# Set SPI Pins https://esphome.io/components/spi.html
+spi:
+  clk_pin: 18
+  mosi_pin: 19
+
+# Set I2C Pins https://esphome.io/components/i2c.html
+i2c:
+  - id: bus_a
+    sda: 21
+    scl: 22
+    scan: true
+
+# Virtual Button https://esphome.io/components/button/index.html
+button:
+
+  # Restart Button https://esphome.io/components/button/restart.html
+  - platform: restart
+    id: restart_button
+    name: ${friendly_name} Restart
+
+# Sensor Components https://esphome.io/components/sensor/index.html
+sensor:
+
+  # Built-in Magnetic Hall Sensor https://esphome.io/components/sensor/esp32_hall.html
+  - platform: esp32_hall
+    name: ${friendly_name} Hall Sensor
+    update_interval: 10s
+
+  # WiFi Signal Sensor https://esphome.io/components/sensor/wifi_signal.html
+  - platform: wifi_signal
+    name: ${friendly_name} WiFi Signal
+    update_interval: 60s
+
+  # Sun Sensors https://esphome.io/components/sun.html#sun-sensor
+  #
+  # These are internal sensors that can be used in automations on-device
+  # but don't create duplicate entities in Home Assistant
+  - platform: sun
+    name: Sun Elevation
+    id: sun_elevation
+    type: elevation
+    internal: true
+  - platform: sun
+    name: Sun Azimuth
+    id: sun_azimuth
+    type: azimuth
+    internal: true
+
+  # Uptime Sensor https://esphome.io/components/sensor/uptime.html
+  - platform: uptime
+    name: ${friendly_name} Uptime Sensor
+    id: uptime_sensor
+    update_interval: 60s
+    on_raw_value:
+      then:
+        # Update the Human-Readable Uptime Text Sensor
+        - text_sensor.template.publish:
+            id: uptime_human
+            state: !lambda |-
+              int seconds = round(id(uptime_sensor).raw_state);
+              int days = seconds / (24 * 3600);
+              seconds = seconds % (24 * 3600);
+              int hours = seconds / 3600;
+              seconds = seconds % 3600;
+              int minutes = seconds /  60;
+              seconds = seconds % 60;
+              return (
+                (days ? String(days) + "d " : "") +
+                (hours ? String(hours) + "h " : "") +
+                (minutes ? String(minutes) + "m " : "") +
+                (String(seconds) + "s")
+              ).c_str();
+
+# Text Sensor Components https://esphome.io/components/text_sensor/index.html
+text_sensor:
+
+  # ESPHome Firmware Version
+  - platform: version
+    name: ${friendly_name} ESPHome Version
+
+  # Wifi Info https://esphome.io/components/text_sensor/wifi_info.html
+  - platform: wifi_info
+    ip_address:
+      name: ${friendly_name} IP Address
+    ssid:
+      name: ${friendly_name} Connected SSID
+    bssid:
+      name: ${friendly_name} Connected BSSID
+    mac_address:
+      name: ${friendly_name} Mac Wifi Address
+    scan_results:
+      name: ${friendly_name} Latest Scan Results
+
+  # Time of Next Sunrise and Sunset
+  #
+  # These are internal sensors that can be used in automations on-device
+  # but don't create duplicate entities in Home Assistant
+  - platform: sun
+    name: Sun Next Sunrise
+    id: next_sunrise
+    internal: true
+    type: sunrise
+    format: "%I:%M %p"
+  - platform: sun
+    name: Sun Next Sunset
+    id: next_sunset
+    internal: true
+    type: sunset
+    format: "%I:%M %p"
+
+  # Human-Readable Uptime https://esphome.io/components/text_sensor/template.html
+  #
+  # This is a bit of an unusual "template" as the actual templating is done
+  # entirely within the automation action of the uptime sensor
+  - platform: template
+    name: ${friendly_name} Uptime Human Readable
+    id: uptime_human
+    icon: mdi:clock-start
+
+# Switch Components https://esphome.io/components/switch/index.html
+switch:
+
+  # Safe Mode Switch https://esphome.io/components/switch/safe_mode.html
+  - platform: safe_mode
+    name: ${friendly_name} Safe Mode
+
+  # Shut Down Switch https://esphome.io/components/switch/shutdown.html
+  - platform: shutdown
+    name: ${friendly_name} Shutdown
+
+# Output Components https://esphome.io/components/output/index.html
+output:
+
+  # Onboard LED Output Pin https://esphome.io/components/output/ledc.html
+  - platform: ledc
+    pin: 2
+    id: onboard_led
+
+# Light Components https://esphome.io/components/light/index.html
+light:
+
+  # Onboard LED https://esphome.io/components/light/monochromatic.html
+  - platform: monochromatic
+    output: onboard_led
+    name: ${friendly_name} Onboard LED
